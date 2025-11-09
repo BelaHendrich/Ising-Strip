@@ -100,18 +100,27 @@ def visualize_from_file(filename, n_x, n_y):
     plt.show()
 
 
-def show_endstate(filename, n_x, n_y):
+def show_endstate(filename):
     filename = "Data/" + filename
 
     with open(filename, "r") as f:
         data = f.readlines()
 
-        current_state = [1 if d == "+" else -1 for d in data[0]]
-        # N = int(len(current_state)**0.5)
+        n_x = int(data[0].split()[2])
+        n_y = int(data[1].split()[2])
+
+        fields = data[5].split()[2]  # h = [data]
+        h = [1 if d == "+" else -1 if d == "-" else 0 for d in fields]
+        h = np.array(h)
+        h.resize(n_y, n_x)
+
+        # ignore 8 lines of parameters
+        spins = data[8].split()[2]  # spins = [data]
+        current_state = [1 if d == "+" else -1 for d in spins]
         current_state = np.array(current_state)
         current_state.resize(n_y, n_x)
 
-        change_list = data[1:]
+        change_list = data[9:]
 
     for change in change_list:
         indices = change.split(",")
@@ -119,11 +128,6 @@ def show_endstate(filename, n_x, n_y):
         current_state[i, j] *= -1
 
     fig, ax = plt.subplots(3, 1)
-    h = np.zeros((n_y, n_x))
-    h[0, :]      =  np.ones(h.shape[1])
-    h[-1, :]     =  np.ones(h.shape[1])
-    h[0, 20:40]  = -1
-    h[-1, 30:50] = -1
 
     im_0 = ax[0].imshow(current_state)
     im_1 = ax[1].imshow(h)
