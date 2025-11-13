@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import os
+from time import time
 from rich.progress import (
     Progress,
     TextColumn,
@@ -16,19 +17,23 @@ OUT_DIR = "Data/"
 
 class IsingModel():
     def __init__(self, N_X, N_Y, BOUNDARIES=("cyclic", "open"),
-                 J=1, BETA=1, MU=1, h=0):
+                 J=1, BETA=1, MU=1, h=None):
         self.N_X = N_X
         self.N_Y = N_Y
 
         self.J = J
         self.BETA = BETA
         self.MU = MU
-        self.h = h  # external field, same dimension as spins
+
+        self.h = h
+        if h is None:
+            self.h = np.zeros((N_Y, N_X))
 
         self.boundary_x = BOUNDARIES[0]
         self.boundary_y = BOUNDARIES[1]
 
-        self.spins = np.random.choice([-1, 1], (N_Y, N_X))
+        self.spins = np.random.choice([-1, 1], (N_Y, N_X),
+                                      p=[.25, .75])
 
     def hamiltonian(self):
         # if not h:
@@ -89,18 +94,14 @@ class IsingModel():
             j = np.random.randint(self.N_X)
 
             delta_e = self.energy_diff(i, j)
-            print(f"energy_diff: {delta_e}")
 
             if delta_e < 0:
                 transition_prob = 1
-                print("yello", transition_prob)
             else:
-                transition_prob = np.exp(-self.BETA*(delta_e))
-                print("hello", transition_prob)
+                transition_prob = np.exp(-self.BETA*delta_e)
 
             if transition_prob > np.random.uniform():
                 self.spins[i, j] *= -1
-                print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 break
 
         return (i, j)
@@ -162,8 +163,11 @@ class IsingModel():
         self.write_params_to_file(filename)
         # self.write_state_to_file(filename)
         with progress:
+            last_time, new_time = time(), time()
             for _ in range(iterations):
                 i, j = self.update()
+                last_time, new_time = new_time, time()
+                # print(f"Spin flip took {(new_time - last_time)*1000:.2f}ms")
                 self.write_change_to_file(filename, i, j)
                 progress.update(task, advance=1)
 

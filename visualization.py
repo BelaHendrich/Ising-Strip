@@ -63,7 +63,7 @@ class Visualization():
         return ani
 
 
-def visualize_from_file(filename, n_x, n_y):
+def visualize_from_file(filename):
     filename = "Data/" + filename
 
     current_state = []
@@ -72,12 +72,15 @@ def visualize_from_file(filename, n_x, n_y):
     with open(filename, "r") as f:
         data = f.readlines()
 
-        current_state = [1 if d == "+" else -1 for d in data[0]]
-        # N = int(len(current_state)**0.5)
+        n_x = int(data[0].split()[2])
+        n_y = int(data[1].split()[2])
+
+        spins = data[8].split()[2]  # spins = [data]
+        current_state = [1 if d == "+" else -1 for d in spins]
         current_state = np.array(current_state)
         current_state.resize(n_y, n_x)
 
-        change_list = data[1:]
+        change_list = data[9:]
 
     fig, ax = plt.subplots()
 
