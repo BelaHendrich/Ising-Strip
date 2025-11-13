@@ -89,20 +89,18 @@ class IsingModel():
         return np.sum(self.spins)
 
     def update(self):
-        while True:
-            i = np.random.randint(self.N_Y)
-            j = np.random.randint(self.N_X)
+        i = np.random.randint(self.N_Y)
+        j = np.random.randint(self.N_X)
 
-            delta_e = self.energy_diff(i, j)
+        delta_e = self.energy_diff(i, j)
 
-            if delta_e < 0:
-                transition_prob = 1
-            else:
-                transition_prob = np.exp(-self.BETA*delta_e)
+        if delta_e < 0:
+            transition_prob = 1
+        else:
+            transition_prob = np.exp(-self.BETA*delta_e)
 
-            if transition_prob > np.random.uniform():
-                self.spins[i, j] *= -1
-                break
+        if transition_prob > np.random.uniform():
+            self.spins[i, j] *= -1
 
         return (i, j)
 
@@ -151,23 +149,19 @@ class IsingModel():
 
         return
 
-    def run(self, iterations, filename):
+    def run(self, steps, filename):
         progress = Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
             TimeRemainingColumn(),
         )
-        task = progress.add_task("Simulation", total=iterations)
+        task = progress.add_task("Simulation", total=steps)
         self.check_for_file(filename)
         self.write_params_to_file(filename)
-        # self.write_state_to_file(filename)
         with progress:
-            last_time, new_time = time(), time()
-            for _ in range(iterations):
+            for _ in range(self.N_X * self.N_Y * steps):
                 i, j = self.update()
-                last_time, new_time = new_time, time()
-                # print(f"Spin flip took {(new_time - last_time)*1000:.2f}ms")
                 self.write_change_to_file(filename, i, j)
                 progress.update(task, advance=1)
 
