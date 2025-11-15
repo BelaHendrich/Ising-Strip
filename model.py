@@ -63,46 +63,45 @@ class IsingModel():
                self.MU*np.sum(self.h*self.spins)
 
     def energy_diff(self, i, j):
-        delta_e = self.spins[i, (j+1) % self.N_X] + \
-                  self.spins[i, (j-1) % self.N_X] + \
-                  self.spins[(i+1) % self.N_Y, j] + \
-                  self.spins[(i-1) % self.N_Y, j]
+        spin_state = self.spins
+        delta_e = spin_state[i, (j+1) % self.N_X] + \
+                  spin_state[i, (j-1) % self.N_X] + \
+                  spin_state[(i+1) % self.N_Y, j] + \
+                  spin_state[(i-1) % self.N_Y, j]
 
         if self.boundary_x[0] == 'o':  # open
             if j == 0:         # remove spin to the left
-                delta_e -= self.spins[i, (j-1) % self.N_X]
+                delta_e -= spin_state[i, (j-1) % self.N_X]
             if j == self.N_Y:  # remove spin to the right
-                delta_e -= self.spins[i, (j+1) % self.N_X]
+                delta_e -= spin_state[i, (j+1) % self.N_X]
 
         if self.boundary_y[0] == 'o':  # open
             if i == 0:         # remove spin above
-                delta_e += self.spins[(i-1) % self.N_Y, j]
+                delta_e += spin_state[(i-1) % self.N_Y, j]
             if i == self.N_X:  # remove spin below
-                delta_e += self.spins[(i+1) % self.N_Y, j]
+                delta_e += spin_state[(i+1) % self.N_Y, j]
 
         delta_e *= self.J
         delta_e += self.MU * self.h[i, j]
 
-        return 2 * delta_e * self.spins[i, j]
+        return 2 * delta_e * spin_state[i, j]
 
     def magnetization(self):
         return np.sum(self.spins)
 
-    def update(self):
-        i = np.random.randint(self.N_Y)
-        j = np.random.randint(self.N_X)
-
+    def update(self, i, j, p):
         delta_e = self.energy_diff(i, j)
 
         if delta_e < 0:
-            transition_prob = 1
-        else:
-            transition_prob = np.exp(-self.BETA*delta_e)
-
-        if transition_prob > np.random.uniform():
             self.spins[i, j] *= -1
+            return (i, j)
 
-        return (i, j)
+        transition_prob = np.exp(-self.BETA*delta_e)
+        if transition_prob > p:
+            self.spins[i, j] *= -1
+            return (i, j)
+
+        return
 
     def large_steps(self, step_size=1_000):
         for _ in range(step_size):
@@ -150,19 +149,28 @@ class IsingModel():
         return
 
     def run(self, steps, filename):
+        iterations = self.N_X * self.N_Y * steps
+
         progress = Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
             TimeRemainingColumn(),
         )
-        task = progress.add_task("Simulation", total=steps)
+        task = progress.add_task("Simulation", total=iterations)
+
         self.check_for_file(filename)
         self.write_params_to_file(filename)
+
+        i_list = np.random.randint(self.N_Y, size=iterations)
+        j_list = np.random.randint(self.N_X, size=iterations)
+        probs  = np.random.uniform(size=iterations)
+
         with progress:
-            for _ in range(self.N_X * self.N_Y * steps):
-                i, j = self.update()
-                self.write_change_to_file(filename, i, j)
+            for i, j, p in zip(i_list, j_list, probs):
+                res = self.update(i, j, p)
+                if res:
+                    self.write_change_to_file(filename, res[0], res[1])
                 progress.update(task, advance=1)
 
         return
