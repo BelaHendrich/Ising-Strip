@@ -80,7 +80,8 @@ def visualize_from_file(filename):
         current_state = np.array(current_state)
         current_state.resize(n_y, n_x)
 
-        change_list = data[9:]
+        # ignore change_list
+        change_list = data[10:]
 
     fig, ax = plt.subplots()
 
@@ -123,7 +124,8 @@ def show_endstate(filename):
         current_state = np.array(current_state)
         current_state.resize(n_y, n_x)
 
-        change_list = data[9:]
+        # ignore change_list
+        change_list = data[10:]
 
     for change in change_list:
         indices = change.split(",")

@@ -13,11 +13,12 @@ from rich.progress import (
 
 
 OUT_DIR = "Data/"
+DTYPE   = ("uint16, uint16")  # data type for change lists
 
 
 class IsingModel():
     def __init__(self, N_X, N_Y, BOUNDARIES=("cyclic", "open"),
-                 J=1, BETA=1, MU=1, h=None):
+                 J=1, BETA=1, MU=1, h=None, init_p=[.5, .5]):
         self.N_X = N_X
         self.N_Y = N_Y
 
@@ -33,16 +34,40 @@ class IsingModel():
         self.boundary_y = BOUNDARIES[1]
 
         self.spins = np.random.choice([-1, 1], (N_Y, N_X),
-                                      p=[.25, .75])
+                                      p=init_p)
+
+        # Will contain the list of all flipped spins
+        self.change_list = np.empty(0, dtype=DTYPE)
+        self.init_spins = self.spins.copy()
+
+    def from_spins(self, N_X, N_Y, spins, BOUNDARIES=("cyclic", "open"),
+                   J=1, BETA=1, MU=1, h=None):
+        self.N_X = N_X
+        self.N_Y = N_Y
+
+        self.J = J
+        self.BETA = BETA
+        self.MU = MU
+
+        self.h = h
+        if h is None:
+            self.h = np.zeros((N_Y, N_X))
+
+        self.boundary_x = BOUNDARIES[0]
+        self.boundary_y = BOUNDARIES[1]
+
+        self.spins = spins
+
+        # Will contain the list of all flipped spins
+        self.change_list = np.empty(0, dtype=DTYPE)
+        self.init_spins = self.spins.copy()
+
+        return self
+
+    def num_updates(self):
+        return len(self.change_list)
 
     def hamiltonian(self):
-        # if not h:
-        #     h = np.zeros_like(self.spins)
-        #     h[0, :]      =  np.ones(self.N_X)
-        #     h[-1, :]     =  np.ones(self.N_X)
-        #     h[0, 20:40]  = -1
-        #     h[-1, 30:50] = -1
-
         spins_right = np.roll(self.spins, +1, axis=1)
         spins_left  = np.roll(self.spins, -1, axis=1)
 
@@ -125,11 +150,21 @@ class IsingModel():
 
         return
 
+    def write_change_list_to_file(self, change_list, filename):
+        filename = OUT_DIR + filename
+        with open(filename, "a") as f:
+            for (i, j) in change_list:
+                f.write(f"{i},{j}" + "\n")
+
+        return
+
     def write_params_to_file(self, filename):
         filename = OUT_DIR + filename
         with open(filename, "w") as f:
             data = vars(self)
             for k, v in data.items():
+                if k == "init_spins":
+                    continue  # don't write the initial state twice
                 if k == "h" or k == "spins":
                     v = "".join(map(lambda x: "+" if x > 0 else
                                     "-" if x < 0 else "0",
@@ -148,7 +183,7 @@ class IsingModel():
 
         return
 
-    def run(self, steps, filename):
+    def run(self, steps, filename=None):
         iterations = self.N_X * self.N_Y * steps
 
         progress = Progress(
@@ -159,19 +194,121 @@ class IsingModel():
         )
         task = progress.add_task("Simulation", total=iterations)
 
-        self.check_for_file(filename)
-        self.write_params_to_file(filename)
+        if filename:
+            self.check_for_file(filename)
+            self.write_params_to_file(filename)
 
         i_list = np.random.randint(self.N_Y, size=iterations)
         j_list = np.random.randint(self.N_X, size=iterations)
         probs  = np.random.uniform(size=iterations)
 
+        new_changes = np.empty(iterations, dtype=DTYPE)
+        idx = 0
+
         with progress:
             for i, j, p in zip(i_list, j_list, probs):
                 res = self.update(i, j, p)
                 if res:
-                    self.write_change_to_file(filename, res[0], res[1])
+                    new_changes[idx] = res
+                    idx += 1
                 progress.update(task, advance=1)
 
+        new_changes = new_changes[:idx]
+        self.change_list = np.concatenate((self.change_list, new_changes))
+
+        if filename:
+            self.write_change_list_to_file(new_changes, filename)
+
         return
+
+    def find_num_of_steps(self, resolution, error_margin=.05, cutoff=100_000):
+        '''
+        Start with a random configuration with no surface fields
+        and wait till the spin-distribution is homogeneous.
+        @resolution is the number of steps after which the
+        magnetization is checked.
+        @error_margin is the percentage of spins that need not
+        be aligned.
+        @cutoff is the maximum number of steps this test-model will take.
+        '''
+        test_model = IsingModel(self.N_X, self.N_Y, J=self.J,
+                                BETA=self.BETA, MU=self.MU)
+
+        mags = [test_model.magnetization()]
+
+        steps_taken = 0
+        target_magnetization = (self.N_X * self.N_Y) * (1 - error_margin)
+        while np.abs(mags[-1]) < target_magnetization and steps_taken < cutoff:
+            test_model.run(resolution)
+            steps_taken += resolution
+            mags.append(test_model.magnetization())
+            print(mags[-1], target_magnetization, steps_taken)
+
+        return steps_taken
+
+    def calculate_average_endstate(self, cutoff):
+        '''
+        Average all states after same @cutoff.
+        NOTE: @cutoff is an index in the change_list, it does
+              not correspond to the number of steps!
+        '''
+        current_state = self.init_spins.copy()
+        avg_endstate = np.zeros_like(current_state)
+
+        for (i, j) in self.change_list[:cutoff]:
+            current_state[i, j] *= -1
+
+        for (i, j) in self.change_list[cutoff:]:
+            current_state[i, j] *= -1
+            avg_endstate += current_state
+
+        averaging_length = len(self.change_list) - cutoff
+
+        return avg_endstate / averaging_length
+
+
+def model_from_file(filename):
+    '''
+    Creates a new model with the same parameters as in @filename.
+    The initial spin configuration is the endstate of the one specified
+    in @filename.
+    '''
+    filename = OUT_DIR + filename
+
+    with open(filename, "r") as f:
+        data = f.readlines()
+
+        n_x = int(data[0].split()[2])
+        n_y = int(data[1].split()[2])
+
+        j    = float(data[2].split()[2])
+        beta = float(data[3].split()[2])
+        mu   = float(data[4].split()[2])
+
+        fields = data[5].split()[2]  # h = [data]
+        h = [1 if d == "+" else -1 if d == "-" else 0 for d in fields]
+        h = np.array(h)
+        h.resize(n_y, n_x)
+
+        boundary_x = data[6].split()[2].strip()
+        boundary_y = data[7].split()[2].strip()
+
+        spins = data[8].split()[2]  # spins = [data]
+        current_state = [1 if d == "+" else -1 for d in spins]
+        current_state = np.array(current_state)
+        current_state.resize(n_y, n_x)
+
+        # ignore change_list
+        change_list = data[10:]
+
+    for change in change_list:
+        indices = change.split(",")
+        i, j = int(indices[0]), int(indices[1])
+        current_state[i, j] *= -1
+
+    model = IsingModel.from_spins(n_x, n_y, spins,
+                                  BOUNDARIES=(boundary_x, boundary_y),
+                                  J=j, BETA=beta, MU=mu, h=h)
+
+    return model
 
