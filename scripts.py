@@ -29,7 +29,8 @@ def get_endstate(filename):
     for change in change_list:
         indices = change.split(",")
         i, j = int(indices[0]), int(indices[1])
-        current_state[i, j] *= -1
+        if i > 0:
+            current_state[i, j] *= -1
 
     return current_state, h
 
@@ -101,20 +102,20 @@ def show_betas():
     fig.savefig("different_betas.png", dpi=600)
 
 
-def find_num_of_steps(self, resolution, error_margin=.05):
+def find_num_of_steps(model, resolution, error_margin=.05):
     '''Start with a random configuration with no surface fields
        and wait till the spin-distribution is homogeneous.
        @resolution is the number of steps after which the
        magnetization is checked
        @error_margin is the percentage of spins that need not
        be aligned.'''
-    test_model = IsingModel(self.N_X, self.N_Y, J=self.J,
-                            BETA=self.BETA, MU=self.MU)
+    test_model = IsingModel(model.N_X, model.N_Y, J=model.J,
+                            BETA=model.BETA, MU=model.MU)
 
     mags = [test_model.magnetization()]
 
     steps_taken = 0
-    target_magnetization = (self.N_X * self.N_Y) * (1 - error_margin)
+    target_magnetization = (model.N_X * model.N_Y) * (1 - error_margin)
     while steps_taken < 500_000:
         test_model.run(resolution)
         steps_taken += resolution
@@ -126,8 +127,8 @@ def find_num_of_steps(self, resolution, error_margin=.05):
     fig, ax = plt.subplots()
 
     ax.plot(np.linspace(0, steps_taken, len(mags)), mags, "o")
-    ax.axhline(y=+self.N_X*self.N_Y, linestyle='--', color='black')
-    ax.axhline(y=-self.N_X*self.N_Y, linestyle='--', color='black')
+    ax.axhline(y=+model.N_X*model.N_Y, linestyle='--', color='black')
+    ax.axhline(y=-model.N_X*model.N_Y, linestyle='--', color='black')
 
     ax.set_xlabel("Steps")
     ax.set_ylabel("Magnetization")
@@ -136,8 +137,8 @@ def find_num_of_steps(self, resolution, error_margin=.05):
     ax.legend()
 
     # plt.show()
-    fig.savefig(f"TestData/size={self.N_X*self.N_Y}_beta={self.BETA}.png", dpi=600)
-    np.savetxt(f"TestData/size={self.N_X*self.N_Y}_beta={self.BETA}.txt", np.array(mags))
+    fig.savefig(f"TestData/size={model.N_X*model.N_Y}_beta={model.BETA}.png", dpi=600)
+    np.savetxt(f"TestData/size={model.N_X*model.N_Y}_beta={model.BETA}.txt", np.array(mags))
 
     return steps_taken
 

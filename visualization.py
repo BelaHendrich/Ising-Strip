@@ -91,7 +91,8 @@ def visualize_from_file(filename):
         indices = change_list[frame].split(",")
         i, j = int(indices[0]), int(indices[1])
 
-        current_state[i, j] *= -1
+        if i > 0:
+            current_state[i, j] *= -1
 
         im.set_data(current_state)
         fig.suptitle(frame)
@@ -130,7 +131,8 @@ def show_endstate(filename):
     for change in change_list:
         indices = change.split(",")
         i, j = int(indices[0]), int(indices[1])
-        current_state[i, j] *= -1
+        if i > 0:
+            current_state[i, j] *= -1
 
     fig, ax = plt.subplots(3, 1)
 

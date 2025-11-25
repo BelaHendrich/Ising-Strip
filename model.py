@@ -13,7 +13,8 @@ from rich.progress import (
 
 
 OUT_DIR = "Data/"
-DTYPE   = ("uint16, uint16")  # data type for change lists
+DT      = "int32"       # data type for indices
+DTYPE   = f"{DT}, {DT}"
 
 
 class IsingModel():
@@ -40,32 +41,15 @@ class IsingModel():
         self.change_list = np.empty(0, dtype=DTYPE)
         self.init_spins = self.spins.copy()
 
-    def from_spins(self, N_X, N_Y, spins, BOUNDARIES=("cyclic", "open"),
-                   J=1, BETA=1, MU=1, h=None):
-        self.N_X = N_X
-        self.N_Y = N_Y
+    @classmethod
+    def from_spins(Self, spins, *args, **kwargs):
 
-        self.J = J
-        self.BETA = BETA
-        self.MU = MU
+        model = Self(*args, **kwargs)
 
-        self.h = h
-        if h is None:
-            self.h = np.zeros((N_Y, N_X))
+        model.spins = spins
+        model.init_spins = model.spins.copy()
 
-        self.boundary_x = BOUNDARIES[0]
-        self.boundary_y = BOUNDARIES[1]
-
-        self.spins = spins
-
-        # Will contain the list of all flipped spins
-        self.change_list = np.empty(0, dtype=DTYPE)
-        self.init_spins = self.spins.copy()
-
-        return self
-
-    def num_updates(self):
-        return len(self.change_list)
+        return model
 
     def hamiltonian(self):
         spins_right = np.roll(self.spins, +1, axis=1)
@@ -126,7 +110,7 @@ class IsingModel():
             self.spins[i, j] *= -1
             return (i, j)
 
-        return
+        return (-1, -1)
 
     def large_steps(self, step_size=1_000):
         for _ in range(step_size):
@@ -183,7 +167,7 @@ class IsingModel():
 
         return
 
-    def run(self, steps, filename=None):
+    def run(self, steps, filename=None, append_file=False):
         iterations = self.N_X * self.N_Y * steps
 
         progress = Progress(
@@ -194,7 +178,7 @@ class IsingModel():
         )
         task = progress.add_task("Simulation", total=iterations)
 
-        if filename:
+        if filename and not append_file:
             self.check_for_file(filename)
             self.write_params_to_file(filename)
 
@@ -203,21 +187,37 @@ class IsingModel():
         probs  = np.random.uniform(size=iterations)
 
         new_changes = np.empty(iterations, dtype=DTYPE)
-        idx = 0
 
         with progress:
-            for i, j, p in zip(i_list, j_list, probs):
+            for idx, (i, j, p) in enumerate(zip(i_list, j_list, probs)):
                 res = self.update(i, j, p)
-                if res:
-                    new_changes[idx] = res
-                    idx += 1
+                new_changes[idx] = res
                 progress.update(task, advance=1)
 
-        new_changes = new_changes[:idx]
         self.change_list = np.concatenate((self.change_list, new_changes))
 
         if filename:
             self.write_change_list_to_file(new_changes, filename)
+
+        return
+
+    def run_long_simulation(self, steps, chunks, filename):
+        '''
+        Break up the simulation into a succession of smaller ones.
+        This avoids running out of memory when trying to precompute
+        all indices and probabilities.
+        '''
+        steps_taken = 0
+        append_file = False
+        while steps_taken < steps - chunks:
+            self.run(chunks, filename=filename, append_file=append_file)
+            # reset saved change_list to save memory
+            self.change_list = np.empty(0, dtype=DTYPE)
+            steps_taken += chunks
+            append_file = True
+
+        self.run(steps - steps_taken, filename=filename,
+                 append_file=append_file)
 
         return
 
@@ -256,10 +256,12 @@ class IsingModel():
         avg_endstate = np.zeros_like(current_state)
 
         for (i, j) in self.change_list[:cutoff]:
-            current_state[i, j] *= -1
+            if i > 0:
+                current_state[i, j] *= -1
 
         for (i, j) in self.change_list[cutoff:]:
-            current_state[i, j] *= -1
+            if i > 0:
+                current_state[i, j] *= -1
             avg_endstate += current_state
 
         averaging_length = len(self.change_list) - cutoff
@@ -267,7 +269,7 @@ class IsingModel():
         return avg_endstate / averaging_length
 
 
-def model_from_file(filename):
+def model_from_file(filename, stop_after=None):
     '''
     Creates a new model with the same parameters as in @filename.
     The initial spin configuration is the endstate of the one specified
@@ -275,40 +277,53 @@ def model_from_file(filename):
     '''
     filename = OUT_DIR + filename
 
-    with open(filename, "r") as f:
-        data = f.readlines()
+    params = np.loadtxt(filename, dtype="str", max_rows=10, delimiter='=')
+    params = dict(np.strings.strip(params))
 
-        n_x = int(data[0].split()[2])
-        n_y = int(data[1].split()[2])
+    N_X = int(params["N_X"])
+    N_Y = int(params["N_Y"])
 
-        j    = float(data[2].split()[2])
-        beta = float(data[3].split()[2])
-        mu   = float(data[4].split()[2])
+    J    = float(params["J"])
+    BETA = float(params["BETA"])
+    MU   = float(params["MU"])
 
-        fields = data[5].split()[2]  # h = [data]
-        h = [1 if d == "+" else -1 if d == "-" else 0 for d in fields]
-        h = np.array(h)
-        h.resize(n_y, n_x)
+    fields = params["h"]
+    h = [1 if d == "+" else -1 if d == "-" else 0 for d in fields]
+    h = np.array(h)
+    h.resize(N_Y, N_X)
 
-        boundary_x = data[6].split()[2].strip()
-        boundary_y = data[7].split()[2].strip()
+    boundary_x = params["boundary_x"]
+    boundary_y = params["boundary_y"]
 
-        spins = data[8].split()[2]  # spins = [data]
-        current_state = [1 if d == "+" else -1 for d in spins]
-        current_state = np.array(current_state)
-        current_state.resize(n_y, n_x)
+    spins = params["spins"]
+    current_state = [1 if d == "+" else -1 for d in spins]
+    current_state = np.array(current_state)
+    current_state.resize(N_Y, N_X)
 
-        # ignore change_list
-        change_list = data[10:]
+    if stop_after is None:
+        change_list = np.loadtxt(filename, dtype=DT, skiprows=10,
+                                 delimiter=',')
+    else:
+        change_list = np.loadtxt(filename, dtype=DT, skiprows=10,
+                                 max_rows=stop_after, delimiter=',')
 
-    for change in change_list:
-        indices = change.split(",")
-        i, j = int(indices[0]), int(indices[1])
-        current_state[i, j] *= -1
+    progress = Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+    )
+    task = progress.add_task("Reevaluation", total=change_list.shape[0])
 
-    model = IsingModel.from_spins(n_x, n_y, spins,
+    with progress:
+        for i, j in change_list:
+            if i > 0:
+                current_state[i, j] *= -1
+            progress.update(task, advance=1)
+
+    model = IsingModel.from_spins(current_state, N_X, N_Y,
                                   BOUNDARIES=(boundary_x, boundary_y),
-                                  J=j, BETA=beta, MU=mu, h=h)
+                                  J=J, BETA=BETA, MU=MU, h=h)
 
     return model
 
