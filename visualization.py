@@ -1,11 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from model import IsingModel
 
 
 class Visualization():
-    def __init__(self, model, with_energy=False, with_mag=False, stepsize=None):
+    def __init__(self, model, with_energy=False, with_mag=False):
         num_plots = 1 + int(with_energy) + int(with_mag)
         ratio_list = [5, 1, 1]
         gridspec_kw = {'height_ratios': ratio_list[:num_plots]}
@@ -27,13 +28,8 @@ class Visualization():
         if with_mag:
             self.m_lines = self.ax[2].plot(magnetizations)[0]
 
-        self.stepsize = stepsize
-
     def update(self, frame):
-        if self.stepsize:
-            self.model.large_steps(step_size=self.stepsize)
-        else:
-            self.model.update()
+        self.model.update()
 
         energies = self.model.history["energies"]
         magnetizations = self.model.history["magnetizations"]
@@ -139,9 +135,14 @@ def show_endstate(filename):
     im_0 = ax[0].imshow(current_state)
     im_1 = ax[1].imshow(h)
     im_2 = ax[2].imshow(h*current_state)
-    fig.colorbar(im_0, ax=ax[0])
-    fig.colorbar(im_1, ax=ax[1])
-    fig.colorbar(im_2, ax=ax[2])
+
+    ims = [im_0, im_1, im_2]
+
+    for i, im in enumerate(ims):
+        ax_divider = make_axes_locatable(ax[i])
+        cax = ax_divider.append_axes("right", size="7%", pad="2%")
+        fig.colorbar(im, cax=cax)
+
     plt.show()
 
     return

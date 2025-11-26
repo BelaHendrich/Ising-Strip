@@ -112,11 +112,6 @@ class IsingModel():
 
         return (-1, -1)
 
-    def large_steps(self, step_size=1_000):
-        for _ in range(step_size):
-            self.update()
-        return
-
     def write_state_to_file(self, filename):
         filename = OUT_DIR + filename
         with open(filename, "a") as f:
@@ -249,9 +244,9 @@ class IsingModel():
     def calculate_average_endstate(self, cutoff):
         '''
         Average all states after same @cutoff.
-        NOTE: @cutoff is an index in the change_list, it does
-              not correspond to the number of steps!
         '''
+        cutoff = self.N_X * self.N_Y * cutoff  # iterations = area * steps
+
         current_state = self.init_spins.copy()
         avg_endstate = np.zeros_like(current_state)
 
@@ -304,6 +299,7 @@ def model_from_file(filename, stop_after=None):
         change_list = np.loadtxt(filename, dtype=DT, skiprows=10,
                                  delimiter=',')
     else:
+        stop_after = N_X * N_Y * stop_after  # iterations = area * steps
         change_list = np.loadtxt(filename, dtype=DT, skiprows=10,
                                  max_rows=stop_after, delimiter=',')
 
