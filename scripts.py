@@ -29,7 +29,7 @@ def get_endstate(filename):
     for change in change_list:
         indices = change.split(",")
         i, j = int(indices[0]), int(indices[1])
-        if i > 0:
+        if i >= 0:
             current_state[i, j] *= -1
 
     return current_state, h

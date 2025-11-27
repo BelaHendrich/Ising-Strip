@@ -251,11 +251,11 @@ class IsingModel():
         avg_endstate = np.zeros_like(current_state)
 
         for (i, j) in self.change_list[:cutoff]:
-            if i > 0:
+            if i >= 0:
                 current_state[i, j] *= -1
 
         for (i, j) in self.change_list[cutoff:]:
-            if i > 0:
+            if i >= 0:
                 current_state[i, j] *= -1
             avg_endstate += current_state
 
@@ -264,7 +264,7 @@ class IsingModel():
         return avg_endstate / averaging_length
 
 
-def model_from_file(filename, stop_after=None):
+def model_from_file(filename, stop_after=None, keep_change_list=False):
     '''
     Creates a new model with the same parameters as in @filename.
     The initial spin configuration is the endstate of the one specified
@@ -313,13 +313,15 @@ def model_from_file(filename, stop_after=None):
 
     with progress:
         for i, j in change_list:
-            if i > 0:
+            if i >= 0:
                 current_state[i, j] *= -1
             progress.update(task, advance=1)
 
     model = IsingModel.from_spins(current_state, N_X, N_Y,
                                   BOUNDARIES=(boundary_x, boundary_y),
                                   J=J, BETA=BETA, MU=MU, h=h)
+    if keep_change_list:
+        model.change_list = change_list
 
     return model
 
