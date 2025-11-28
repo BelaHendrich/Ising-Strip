@@ -196,7 +196,7 @@ class IsingModel():
 
         return
 
-    def run_long_simulation(self, steps, chunks, filename):
+    def run_long_simulation(self, steps, chunks, filename=None):
         '''
         Break up the simulation into a succession of smaller ones.
         This avoids running out of memory when trying to precompute
