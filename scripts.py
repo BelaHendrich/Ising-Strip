@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 import visualization
+from input import parse_input
 from model import IsingModel
 
 
@@ -143,5 +146,139 @@ def find_num_of_steps(model, resolution, error_margin=.05):
     return steps_taken
 
 
+def test_energy():
+
+    params = parse_input()
+
+    N_X = int(params["N_X"])
+    N_Y = int(params["N_Y"])
+    MU = params["MU"]
+    J = params["J"]
+    BETA = params["BETA"]
+
+    h = np.zeros((N_Y, N_X))
+    h[0, :]      =  np.ones(h.shape[1])
+    h[-1, :]     =  np.ones(h.shape[1])
+    h[0, 40:60]  = -1
+    h[-1, 40:60] = -1
+
+
+    model = IsingModel(N_X, N_Y, J=J, BETA=BETA, MU=MU, h=h)
+
+    last_e = model.hamiltonian()
+    current_e = last_e
+    print(last_e)
+    print('-'*50)
+
+    def manual_energy(spins):
+        sum = 0
+        for i, s in enumerate(spins):
+            for j, ss in enumerate(s):
+                if i!=0:
+                    sum += ss*spins[i-1, j]
+                if i!=N_Y-1:
+                    sum += ss*spins[i+1, j]
+
+                sum += ss*spins[i, (j-1)%N_X]
+                sum += ss*spins[i, (j+1)%N_X]
+
+        sum *= 1/2  # overcounting
+
+        return -J * sum - MU * np.sum(h*spins)
+
+    print(manual_energy(model.spins))
+
+
+    for _ in range(100):
+        ii, jj = np.random.randint(N_Y), np.random.randint(N_X)
+        print(ii, jj)
+
+        last_e = model.hamiltonian()
+        e_diff = model.energy_diff(ii, jj)
+        current_e += e_diff
+        print(manual_energy(model.spins))
+        print(current_e)
+
+        model.spins[ii, jj] *= -1
+
+        print(model.hamiltonian())
+        print(model.hamiltonian() - last_e)
+        print(e_diff)
+        if np.abs(model.hamiltonian() - last_e - e_diff) > 0.1:
+            print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"*100)
+        print('-'*50)
+
+
+    print(J, MU)
+
+
+def read_center_data(filename):
+    data = []
+    with open(filename, "r") as f:
+        for i, line in enumerate(f.readlines()):
+            if i%4 == 0:
+                line = line.split()
+                line[1] = float(line[1])  # beta
+                line[2] = int(line[2])    # N_Y
+                new_entry = {"tag": line[0]}
+                new_entry["beta"] = line[1]
+                new_entry["N_Y"] = line[2]
+            if i%4 == 1:
+                new_entry["center_spins"] = float(line)
+            if i%4 == 2:
+                new_entry["center_line"] = float(line)
+            if i%4 == 3:
+                new_entry["center_column"] = float(line)
+                data.append(new_entry)
+
+    for d in data:
+        print(d)
+    print(pd.DataFrame(data=data))
+    return
+
+
+def read_avg_data(filename, line_nr=1):
+    '''
+    line_nr determines the metric:
+        1 four/two center spins
+        2 center line average
+        3 center column average
+
+    ignores tag
+    '''
+    data = {}
+    with open(filename, "r") as f:
+        for i, line in enumerate(f.readlines()):
+            if i%4 == 0:
+                line = line.split()
+                current_beta = float(line[1])
+                current_ny = int(line[2])
+            if i%4 == line_nr:
+                if current_ny in data:
+                    if current_beta in data[current_ny]:
+                        data[current_ny][current_beta].append(float(line))
+                    else:
+                        data[current_ny][current_beta] = [float(line)]
+                else:
+                    data[current_ny] = {}
+                    data[current_ny][current_beta] = [float(line)]
+
+    for vv in data.values():
+        for k, v in vv.items():
+            vv[k] = np.mean(v)
+
+    df = pd.DataFrame(data=data)
+    df = df.sort_index()
+    df = df.reindex(sorted(df.columns), axis=1)
+
+    return df
+
+
 if __name__ == "__main__":
-    show_betas()
+    for s in ["-", "+"]:
+        for n in range(1, 4):
+            print(s, n)
+            df = read_avg_data(f"data_{s}.txt", line_nr=n)
+            print(df)
+            sns.heatmap(df, annot=True)
+            plt.show()

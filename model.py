@@ -51,16 +51,21 @@ class IsingModel():
 
         return model
 
-    def hamiltonian(self):
-        spins_right = np.roll(self.spins, +1, axis=1)
-        spins_left  = np.roll(self.spins, -1, axis=1)
+    # TODO:
+    # QUICK FIX, CHANGE!
+    def hamiltonian(self, spins=None):
+        if spins is None:
+            spins = self.spins
+
+        spins_right = np.roll(spins, +1, axis=1)
+        spins_left  = np.roll(spins, -1, axis=1)
 
         if self.boundary_x[0] == 'o':  # open boundaries
             spins_right[:, 0] = np.zeros(self.N_Y)
             spins_left[:, -1] = np.zeros(self.N_Y)
 
-        spins_down  = np.roll(self.spins, +1, axis=0)
-        spins_up    = np.roll(self.spins, -1, axis=0)
+        spins_down  = np.roll(spins, +1, axis=0)
+        spins_up    = np.roll(spins, -1, axis=0)
 
         if self.boundary_y[0] == 'o':  # open boundaries
             spins_down[0, :] = np.zeros(self.N_X)
@@ -68,27 +73,31 @@ class IsingModel():
 
         shifted_spins = spins_right + spins_left + spins_down + spins_up
 
-        return -np.sum(self.J*self.spins*shifted_spins) - \
-               self.MU*np.sum(self.h*self.spins)
+        # 1/2 because of overcounting
+        return -1/2 * np.sum(self.J*spins*shifted_spins) - \
+               self.MU*np.sum(self.h*spins)
 
-    def energy_diff(self, i, j):
-        spin_state = self.spins
+    # TODO:
+    # QUICK FIX, CHANGE!
+    def energy_diff(self, i, j, spin_state=None):
+        if spin_state is None:
+            spin_state = self.spins
         delta_e = spin_state[i, (j+1) % self.N_X] + \
                   spin_state[i, (j-1) % self.N_X] + \
                   spin_state[(i+1) % self.N_Y, j] + \
                   spin_state[(i-1) % self.N_Y, j]
 
         if self.boundary_x[0] == 'o':  # open
-            if j == 0:         # remove spin to the left
+            if j == 0:             # remove spin to the left
                 delta_e -= spin_state[i, (j-1) % self.N_X]
-            if j == self.N_Y:  # remove spin to the right
+            if j == self.N_X - 1:  # remove spin to the right
                 delta_e -= spin_state[i, (j+1) % self.N_X]
 
         if self.boundary_y[0] == 'o':  # open
-            if i == 0:         # remove spin above
-                delta_e += spin_state[(i-1) % self.N_Y, j]
-            if i == self.N_X:  # remove spin below
-                delta_e += spin_state[(i+1) % self.N_Y, j]
+            if i == 0:             # remove spin above
+                delta_e -= spin_state[(i-1) % self.N_Y, j]
+            if i == self.N_Y - 1:  # remove spin below
+                delta_e -= spin_state[(i+1) % self.N_Y, j]
 
         delta_e *= self.J
         delta_e += self.MU * self.h[i, j]
@@ -97,6 +106,54 @@ class IsingModel():
 
     def magnetization(self):
         return np.sum(self.spins)
+
+    def center_spins(self):
+        i_center, j_center = self.N_X // 2, self.N_Y // 2
+
+        if self.N_X % 2 == 0:
+            i_list = [i_center - 1, i_center]
+        else:
+            i_list = [i_center]
+
+        if self.N_Y % 2 == 0:
+            j_list = [j_center - 1, j_center]
+        else:
+            j_list = [j_center]
+
+        avg, count = 0, len(i_list) * len(j_list)
+        for i in i_list:
+            for j in j_list:
+                avg += self.spins[j, i]
+
+        return avg / count
+
+    def center_line(self):
+        j_center = self.N_Y // 2
+
+        if self.N_Y % 2 == 0:
+            j_list = [j_center - 1, j_center]
+        else:
+            j_list = [j_center]
+
+        avg, count = 0, len(j_list) * self.N_X
+        for j in j_list:
+            avg += sum(self.spins[j, :])
+
+        return avg / count
+
+    def center_column(self):
+        i_center = self.N_X // 2
+
+        if self.N_Y % 2 == 0:
+            i_list = [i_center - 1, i_center]
+        else:
+            i_list = [i_center]
+
+        avg, count = 0, len(i_list) * self.N_Y
+        for i in i_list:
+            avg += sum(self.spins[:, i])
+
+        return avg / count
 
     def update(self, i, j, p):
         delta_e = self.energy_diff(i, j)
@@ -111,6 +168,20 @@ class IsingModel():
             return (i, j)
 
         return (-1, -1)
+
+    def update_with_energy(self, i, j, p):
+        delta_e = self.energy_diff(i, j)
+
+        if delta_e < 0:
+            self.spins[i, j] *= -1
+            return delta_e, (i, j)
+
+        transition_prob = np.exp(-self.BETA*delta_e)
+        if transition_prob > p:
+            self.spins[i, j] *= -1
+            return delta_e, (i, j)
+
+        return 0, (-1, -1)
 
     def write_state_to_file(self, filename):
         filename = OUT_DIR + filename
@@ -196,6 +267,100 @@ class IsingModel():
 
         return
 
+    def run_with_energy_tmp(self, steps, filename=None, append_file=False, energy_steps=10):
+        iterations = self.N_X * self.N_Y * steps
+        energy_steps = self.N_X * self.N_Y * energy_steps
+
+        progress = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+        )
+        task = progress.add_task("Simulation", total=iterations)
+
+        if filename and not append_file:
+            self.check_for_file(filename)
+            self.write_params_to_file(filename)
+
+        i_list = np.random.randint(self.N_Y, size=iterations)
+        j_list = np.random.randint(self.N_X, size=iterations)
+        probs  = np.random.uniform(size=iterations)
+
+        new_changes = np.empty(iterations, dtype=DTYPE)
+
+        average_endstate = self.spins.copy()
+
+        current_energy = self.hamiltonian()
+        energies = [current_energy]
+        energies1 = [current_energy]
+
+        with progress:
+            for idx, (i, j, p) in enumerate(zip(i_list, j_list, probs)):
+                de, res = self.update_with_energy(i, j, p)
+                current_energy += de
+                new_changes[idx] = res
+                progress.update(task, advance=1)
+
+                average_endstate += self.spins
+
+                if idx % energy_steps == 0:
+                    energies.append(current_energy)
+                    energies1.append(self.hamiltonian())
+
+        self.change_list = np.concatenate((self.change_list, new_changes))
+
+        if filename:
+            self.write_change_list_to_file(new_changes, filename)
+
+        return average_endstate / iterations, np.array(energies), np.array(energies1)
+
+    def run_with_energy(self, steps, filename=None, append_file=False, energy_steps=10):
+        iterations = self.N_X * self.N_Y * steps
+        energy_steps = self.N_X * self.N_Y * energy_steps
+
+        progress = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+        )
+        task = progress.add_task("Simulation", total=iterations)
+
+        if filename and not append_file:
+            self.check_for_file(filename)
+            self.write_params_to_file(filename)
+
+        i_list = np.random.randint(self.N_Y, size=iterations)
+        j_list = np.random.randint(self.N_X, size=iterations)
+        probs  = np.random.uniform(size=iterations)
+
+        new_changes = np.empty(iterations, dtype=DTYPE)
+
+        average_endstate = self.spins.copy()
+
+        current_energy = self.hamiltonian()
+        energies = [current_energy]
+
+        with progress:
+            for idx, (i, j, p) in enumerate(zip(i_list, j_list, probs)):
+                de, res = self.update_with_energy(i, j, p)
+                current_energy += de
+                new_changes[idx] = res
+                progress.update(task, advance=1)
+
+                average_endstate += self.spins
+
+                if idx % energy_steps == 0:
+                    energies.append(current_energy)
+
+        self.change_list = np.concatenate((self.change_list, new_changes))
+
+        if filename:
+            self.write_change_list_to_file(new_changes, filename)
+
+        return average_endstate / iterations, np.array(energies)
+
     def run_long_simulation(self, steps, chunks, filename=None):
         '''
         Break up the simulation into a succession of smaller ones.
@@ -241,11 +406,12 @@ class IsingModel():
 
         return steps_taken
 
-    def calculate_average_endstate(self, cutoff):
+    def calculate_average_endstate(self, cutoff, energy_steps=0):
         '''
         Average all states after same @cutoff.
         '''
         cutoff = self.N_X * self.N_Y * cutoff  # iterations = area * steps
+        energy_steps = self.N_X * self.N_Y * energy_steps
 
         current_state = self.init_spins.copy()
         avg_endstate = np.zeros_like(current_state)
@@ -254,12 +420,27 @@ class IsingModel():
             if i >= 0:
                 current_state[i, j] *= -1
 
-        for (i, j) in self.change_list[cutoff:]:
+        if energy_steps != 0:
+            current_energy = self.hamiltonian(spins=current_state)
+            energies = [current_energy]
+
+        for idx, (i, j) in enumerate(self.change_list[cutoff:]):
             if i >= 0:
                 current_state[i, j] *= -1
+                if energy_steps != 0:
+                    current_energy += self.energy_diff(i, j, spin_state=current_state)
+                    if idx % energy_steps == 0:
+                        energies.append(current_energy)
+            if energy_steps != 0 and idx % energy_steps == 0:
+                energies.append(current_energy)
+
             avg_endstate += current_state
 
         averaging_length = len(self.change_list) - cutoff
+
+        if energy_steps != 0:
+            print(len(energies))
+            return avg_endstate / averaging_length, np.array(energies)
 
         return avg_endstate / averaging_length
 
