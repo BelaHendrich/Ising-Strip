@@ -237,7 +237,7 @@ def read_center_data(filename):
     return
 
 
-def read_avg_data(filename, line_nr=1):
+def read_avg_data(filename, line_nr=1, ny_range=None):
     '''
     line_nr determines the metric:
         1 four/two center spins
@@ -254,6 +254,9 @@ def read_avg_data(filename, line_nr=1):
                 current_beta = float(line[1])
                 current_ny = int(line[2])
             if i%4 == line_nr:
+                if ny_range is not None:
+                    if current_ny not in ny_range:
+                        continue
                 if current_ny in data:
                     if current_beta in data[current_ny]:
                         data[current_ny][current_beta].append(float(line))
@@ -275,10 +278,15 @@ def read_avg_data(filename, line_nr=1):
 
 
 if __name__ == "__main__":
-    for s in ["-", "+"]:
+    # 24 up
+    neg_range = [i for i in range(24, 30)]
+    # till 22
+    pos_range = [i for i in range(15, 23)]
+    for s, r in zip(["-", "+"], [neg_range, pos_range]):
         for n in range(1, 4):
             print(s, n)
-            df = read_avg_data(f"data_{s}.txt", line_nr=n)
+            df = read_avg_data(f"new_data_{s}.txt", line_nr=n, ny_range=r)
             print(df)
-            sns.heatmap(df, annot=True)
+            hm = sns.heatmap(df, annot=True)
             plt.show()
+            hm.get_figure().savefig(f"overall_plot{s}{n}.png")

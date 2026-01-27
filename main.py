@@ -34,8 +34,10 @@ int_betas = np.linspace(0.50, 0.60, 10)
 for sign, ips in zip(["-", "+"], [[1., 0.], [0., 1.]]):
     if sign=="-":
         dists = [i for i in range(24, 30)]
+        int_betas = np.linspace(0.482, 0.582, 20)
     if sign=="+":
         dists = [i for i in range(15, 23)]
+        int_betas = np.linspace(0.502, 0.652, 20)
     for N_Y in dists:
 
         h = np.zeros((N_Y, N_X))
@@ -45,6 +47,24 @@ for sign, ips in zip(["-", "+"], [[1., 0.], [0., 1.]]):
         h[-1, 40:60] = -1
 
         for NEW_BETA in int_betas:
+
+            # first run:
+            save_to = "data_-0.txt"
+            if sign=="+" or NEW_BETA>=0.53:
+                continue
+            # second run:
+            save_to = "data_-1.txt"
+            if sign=="+" or NEW_BETA<0.53:
+                continue
+            # third run:
+            save_to = "data_+0.txt"
+            if sign=="-" or NEW_BETA>=0.58:
+                continue
+            # fourth run:
+            save_to = "data_+1.txt"
+            if sign=="-" or NEW_BETA<0.58:
+                continue
+
             # --- pick up where I started ---
             # if sign=="-":
             #     continue
@@ -63,7 +83,8 @@ for sign, ips in zip(["-", "+"], [[1., 0.], [0., 1.]]):
             print(model.center_line())
             print(model.center_column())
 
-            with open(f"data_{sign}.txt", "a") as f:
+            # with open(f"data_{sign}.txt", "a") as f:
+            with open(save_to, "a") as f:
                 f.write(f"5k/5k {NEW_BETA:.3f} {N_Y}\n")
 
                 f.write(f"{model.center_spins():.3f}\n")
